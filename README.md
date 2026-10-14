@@ -1,5 +1,11 @@
 # claude-box — sandboxed Claude Code sidecar
 
+**Repo:** `wai-lau/cc-sidecar`, consumed by exec-fn as the git submodule
+`claude-box/` (since 2026-10-14; history split out of exec-fn). Commit HERE —
+from exec-fn, `git -C claude-box commit ...` — and exec-fn's push hook pushes
+this repo first, then bumps and pushes exec-fn's pointer. The live sidecar runs
+from `/srv/cc-agent/`, so a commit changes nothing until `setup.sh` reinstalls.
+
 Serves `/cc` on the site. The api container is `python:3.12-slim` with no node,
 no `claude` binary and no credentials, so Claude Code runs **host-side** as its
 own unprivileged user and the container talks to it over the docker bridge —
