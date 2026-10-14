@@ -58,3 +58,9 @@ The web tools return structured blocks with no `text` field, which `resultText()
 ## Live-credentials and the sign-in (2026-10-09/10)
 
 On 2026-10-09 the CLI's OAuth refresh failed (the credentials file was rewritten with `expiresAt: 0`, refresh token still present) and every Exec turn became `Failed to authenticate: OAuth session expired and could not be refreshed`. The ssh recovery was miserable from a phone, and the TUI hard-wraps the sign-in URL to the terminal width — the copied, wrapped URL was refused by claude.com as `Invalid request format`. `login.mjs` (2026-10-10) moved the whole flow into the panel.
+
+## Smaller incidents, dated
+
+- **2026-09-21** — `63508dc`: the interrupt/hangup listener bug above; `b617718` fixed `/listall`, which showed only the last 7 days (the same `limit`-before-filter cause as the titler scratch).
+- **2026-09-13** — `fc9e369`: path-taking tools confined to the sandbox dir (`sandbox-paths.mjs`); `Bash` stays outside it by decision (ARCHITECTURE S-5). `88a080a`: `/etc` bound file by file instead of wholesale.
+- **2026-10-14** — `397162b`: backgrounding the phone or closing the tab cut the SSE stream and the sidecar aborted the run, so Exec stopped mid-answer; the hangup abort was deleted and `POST /interrupt` added (see the superseded note above).
