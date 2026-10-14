@@ -6,7 +6,7 @@ from exec-fn, `git -C claude-box commit ...` — and exec-fn's push hook pushes
 this repo first, then bumps and pushes exec-fn's pointer. The live sidecar runs
 from `/srv/cc-agent/`, so a commit changes nothing until `setup.sh` reinstalls.
 
-Serves `/cc` on the site. The api container is `python:3.12-slim` with no node,
+Serves the Exec panel on the site (the `/api/cc/*` routes). The api container is `python:3.12-slim` with no node,
 no `claude` binary and no credentials, so Claude Code runs **host-side** as its
 own unprivileged user and the container talks to it over the docker bridge —
 the same shape as the hosaka / emet / printer upstreams, minus the SSH tunnel
@@ -22,22 +22,22 @@ browser ──HTTPS──▶ nginx ──▶ api container ──172.17.0.1:8129
 ## Blast radius
 
 `cc-agent` has no sudo, no docker group, and no read access to `/exec-fn`. Its
-cwd — `/srv/cc-sandbox` — is the entire writable world. Three independent layers
-enforce that, because the in-process one is the weakest:
+cwd — `/srv/cc-sandbox` — is the working area. It has `Bash` and the web tools,
+so the honest boundary is the mount namespace plus a path gate, not "no tools"
+(ARCHITECTURE.md S-3 to S-5). The layers, strongest first:
 
-1. **`canUseTool`** in `server.mjs` — a deterministic allowlist
-   (`Read/Write/Edit/Glob/Grep/Bash`). It answers every request, including
-   denials: with no `canUseTool`, a non-allowlisted tool falls through to an
-   interactive prompt that nobody is there to answer, and the run stalls until
-   the idle timeout instead of failing cleanly. `WebFetch`/`WebSearch` are
-   omitted on purpose — they are the one exfiltration path a mount namespace
-   cannot close.
-2. **`settingSources: []`** — no settings file is read at all. The agent has
-   Bash and a writable `$HOME`, so a `settings.json` it wrote itself would
-   otherwise come back as policy on the next run.
-3. **systemd** (`ProtectSystem=strict` + `BindPaths`) — `/exec-fn`, `.env` and
-   `docker.sock` are not merely unreadable by uid, they are absent from the
-   mount namespace. This is the layer that still holds if the other two fail.
+1. **systemd** (`TemporaryFileSystem=/:ro` + named binds) — `/exec-fn`, `.env`,
+   `data/` and `docker.sock` are not merely unreadable by uid, they are absent
+   from the mount namespace. `/home/cc-agent` (OAuth token) IS in it; that risk
+   is accepted (S-4).
+2. **The tool allowlist** — the SDK `tools` option (`BUILTIN_TOOLS` in
+   `server.mjs`) keeps anything unnamed out of the model's context.
+3. **`canUseTool`** — denies names outside `ALLOWED_TOOLS` and confines the
+   path-taking tools (`Read/Write/Edit/NotebookEdit/Glob/Grep`) to the sandbox
+   dir (`sandbox-paths.mjs`, resolved-path check). It does NOT see harness tools
+   and does not cover `Bash`.
+4. **`settingSources: []`** — no settings file is read, so a `settings.json` the
+   agent wrote itself cannot come back as policy.
 
 `/srv/cc-agent` (the sidecar code) is root-owned and group-readable, so the
 agent cannot rewrite the server that constrains it.
@@ -81,16 +81,14 @@ the page degrades rather than 500s.
 **Re-login after that is normally done from the Exec panel, not here**
 (`login.mjs`). A signed-out turn ends with a sign-in link. Approve it, paste
 the code back into the panel, and the sidecar finishes `claude auth login`
-itself. ARCHITECTURE.md §7a-bis.
+itself. ARCHITECTURE.md S-2.
 
 ## Endpoints (bridge-only, `x-cc-token` required)
 
-| Method | Path     | What |
-|--------|----------|------|
-| GET    | `/health`| `{ok, busy, active}` |
-| POST   | `/query` | `{prompt, sessionId?}` → SSE of `session`/`text`/`thinking`/`tool`/`tool_result`/`done`/`error` |
-
-Pass a previous run's `sessionId` to continue that conversation (`resume`).
+`/health`, `/query`, `/interrupt`, `/new`, `/history`, `/sessions`, `/resume`,
+`/title`, `/title-gen`, `/limits` — the table is ARCHITECTURE.md S-1. The
+sidecar owns which conversation is current (`~cc-agent/.cc-session`); `/query`
+takes no session id.
 
 ## Limits
 
@@ -107,11 +105,12 @@ budget as interactive `claude` sessions on this box.
 ```bash
 sudo systemctl status cc-sidecar
 sudo journalctl -u cc-sidecar -f
-sudo systemctl restart cc-sidecar        # after editing server.mjs, then re-run setup.sh
+sudo systemctl restart cc-sidecar        # after setup.sh has copied a changed server.mjs
 ```
 
-`setup.sh` copies `server.mjs` into `/srv/cc-agent`; editing the repo copy alone
-changes nothing until you re-run it.
+`setup.sh` copies every module into `/srv/cc-agent`; editing the repo copy alone
+changes nothing until you re-run it (then restart the unit). Tests:
+`node --test *.test.mjs` (never a bare directory).
 
 ## The persona
 
@@ -129,10 +128,10 @@ sudo install -o root -g cc-agent -m 0640 claude-box/cc-context.md /srv/cc-agent/
 Root-owned on purpose: the agent must not be able to rewrite its own
 instructions the way it could a file in the sandbox.
 
-It deliberately carries no repo or project detail. With no tools and no
-filesystem here, that would be tokens on every turn buying nothing. The personal
+It deliberately carries no repo or project detail: the sandbox is not a
+checkout, so that would be tokens on every turn buying nothing. The personal
 detail it does carry is safe only while `/cc` stays owner-only — widening that
-tier means pulling this file first.
+tier means pulling this file first. Docs: ARCHITECTURE.md, ARCHAEOLOGY.md, CLAUDE.md here.
 
 Testing a prompt change costs a turn in the ONE live conversation, so park the
 pointer rather than writing into it:

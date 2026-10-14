@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# claude-box's own pre-commit (symlinked in as this repo's git hook by exec-fn's
+# session hook). The sidecar is node + shell, not laid out like exec-fn, so it
+# does NOT run exec-fn's shared hook: syntax, its node suites, shellcheck.
+set -e
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+
+MJS=$(echo "$STAGED" | grep -E '\.mjs$' || true)
+for f in $MJS; do
+  node --check "$f" || { echo "$f: syntax error — commit blocked."; exit 1; }
+done
+# Any .mjs change can break a suite (they import the modules): run them all,
+# each EXPLICITLY (a bare `node --test .` would execute server.mjs).
+if [ -n "$MJS" ]; then
+  for t in ./*.test.mjs; do
+    node --test "$t" >/dev/null 2>&1 || { echo "$t failed — commit blocked. Run: node --test $t"; exit 1; }
+  done
+fi
+
+SH=$(echo "$STAGED" | grep -E '\.sh$|^scripts/pre-commit$' || true)
+if [ -n "$SH" ] && command -v shellcheck >/dev/null; then
+  # shellcheck disable=SC2086
+  shellcheck --severity=warning $SH || { echo "shellcheck failed — commit blocked."; exit 1; }
+fi
+exit 0

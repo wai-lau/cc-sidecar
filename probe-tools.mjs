@@ -1,7 +1,7 @@
 // What tools does the model ACTUALLY get? Ask it, do not read the config.
 //
-// CLAUDE.md tells you to "re-run the init probe and confirm TOOL COUNT: 0"
-// after every @anthropic-ai/claude-agent-sdk bump. This is that probe. It was
+// CLAUDE.md tells you to re-run the init probe after every
+// @anthropic-ai/claude-agent-sdk bump and confirm no UNEXPECTED tool (ARCHITECTURE.md S-6). This is that probe. It was
 // referenced for months without existing as a file, which is most of how
 // AskUserQuestion reached a user: nothing was re-run because there was nothing
 // to run.

@@ -1,6 +1,6 @@
 // Confine every path-taking tool to the sandbox directory.
 //
-// The mount namespace already decides what exists at all (§7b): /exec-fn and
+// The mount namespace already decides what exists at all (ARCHITECTURE.md S-3): /exec-fn and
 // the docker socket are not in it. This is the layer INSIDE that: it keeps the
 // agent within /srv/cc-sandbox rather than merely within the namespace, which
 // matters because the namespace also contains /home/cc-agent -- and that holds
