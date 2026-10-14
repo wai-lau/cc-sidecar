@@ -28,9 +28,9 @@ The host-side Claude Code sidecar behind the Exec panel (`server.mjs` on the Age
 
 **Never put `CC_SIDECAR_TOKEN` in the CLI's env** (`childEnv()` strips it). **S-7**.
 
-**TESTS**: `node --test *.test.mjs` from this directory (login, sandbox-paths, uploads). NEVER `node --test .` / a bare directory — it would execute `server.mjs` (binds the port) and `probe-tools.mjs` (spends an API call). `tests/test_node_suites.py` runs every `*.test.mjs` inside exec-fn's pytest (discovered, so a new suite is covered the day it lands; it FAILS if the login or sandbox-paths suite goes missing).
+**TESTS**: `node --test *.test.mjs` from this directory (login, sandbox-paths, uploads). NEVER `node --test .` / a bare directory — it would execute `server.mjs` (binds the port) and `probe-tools.mjs` (spends an API call). exec-fn's `tests/test_cc_node_suites.py` runs every `*.test.mjs` inside its pytest (discovered, so a new suite is covered the day it lands; it FAILS if the login or sandbox-paths suite goes missing).
 
-**PRE-COMMIT is this repo's own** `scripts/pre-commit` (node syntax on staged `.mjs`, every suite, shellcheck), linked as the git hook by exec-fn's session hook — NOT exec-fn's shared hook (this repo is not laid out like exec-fn).
+**Lints, hooks and checks are exec-fn's, not this repo's.** `scripts/pre-commit` here is a SHIM (verbatim copy of exec-fn's `scripts/subrepo-pre-commit`; git runs it via `core.hooksPath=scripts`, which exec-fn's session hook sets). Inside exec-fn it runs exec-fn's `scripts/pre-commit`; cloned on its own it sparse-pulls ONLY the lint files (exec-fn `scripts/tooling-paths.txt`) into the gitignored `.exec-fn/` and runs that (lints only; tests need exec-fn). Never edit the shim here — change checks in exec-fn. A standalone clone: `git config core.hooksPath scripts` once. exec-fn ARCHITECTURE.md §1e. For this repo exec-fn's hook runs: `node --check` on staged `.mjs`, every suite, shellcheck.
 
 ---
 

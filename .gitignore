@@ -1,3 +1,5 @@
 __pycache__/
 *.pyc
 node_modules/
+# exec-fn tooling, pulled by scripts/pre-commit when cloned outside exec-fn
+/.exec-fn/
