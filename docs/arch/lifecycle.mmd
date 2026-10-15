@@ -1,0 +1,22 @@
+sequenceDiagram
+    participant P as Panel
+    participant A as exec-fn cc_client
+    participant S as server.mjs
+    participant K as Agent SDK run
+    P->>A: POST /api/cc/query
+    A->>S: POST /query
+    alt slot taken
+        S-->>A: 429 busy
+        A->>A: wait up to CC_BUSY_WAIT, retry
+    else free
+        S->>K: query() resume = .cc-session
+        K-->>S: session, text, tool, tool_result frames
+        S-->>A: SSE frames
+        A-->>P: SSE relayed
+    end
+    Note over S,K: a hangup does NOT abort. Frames to a dead socket are dropped, transcript keeps every word
+    P->>A: POST /api/cc/interrupt
+    A->>S: POST /interrupt
+    S->>K: abort controller
+    K-->>S: unwinds, slot frees
+    K-->>S: done frame, or 10 min idle abort

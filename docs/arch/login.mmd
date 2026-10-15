@@ -1,0 +1,11 @@
+flowchart TD
+    turn["Turn fails<br/>authentication_failed or SIGNED_OUT_RE"] --> start["startLogin():<br/>spawn claude auth login --claudeai"]
+    start --> url["cut URL from OSC 8 hyperlink"]
+    url --> reply["text frame: markdown sign-in link"]
+    reply --> wait["pending sign-in, child lives 10 min"]
+    wait --> paste["Wai opens link, pastes code#state in panel"]
+    paste --> ans["answerSignIn(): before busy check,<br/>takes no query slot"]
+    ans --> stdin["code written to CLI stdin"]
+    stdin --> cli["CLI does PKCE exchange,<br/>writes .credentials.json"]
+    cli --> ok["Signed back in. Send your last message again."]
+    stdin -.wrong code.-> fresh["CLI exits: reply with last line + fresh link"]

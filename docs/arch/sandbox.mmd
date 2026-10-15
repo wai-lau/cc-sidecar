@@ -1,0 +1,11 @@
+flowchart TD
+    call["Model wants a tool or a path"] --> l1{"1. tools option<br/>BUILTIN_TOOLS only"}
+    l1 -->|"not named: never in context"| no1["absent"]
+    l1 --> l2{"2. strictMcpConfig<br/>only archive + exec servers"}
+    l2 -->|"account connectors dropped"| no2["absent"]
+    l2 --> l3{"3. canUseTool<br/>name in ALLOWED_TOOLS?"}
+    l3 -->|no| deny["denied"]
+    l3 --> l4{"4. path gate<br/>realpath under /srv/cc-sandbox?<br/>file tools only"}
+    l4 -->|no| deny
+    l4 --> l5["5. mount namespace<br/>TemporaryFileSystem=/:ro + named binds"]
+    l5 --> bash["Bash: gated only by layer 5<br/>can reach /home/cc-agent"]

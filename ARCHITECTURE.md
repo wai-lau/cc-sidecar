@@ -4,7 +4,7 @@ The host-side Claude Code sidecar: `server.mjs` on the Agent SDK, run as the unp
 
 **This file moved from exec-fn's ARCHITECTURE.md §7 on 2026-10-14** (the repo is `wai-lau/cc-sidecar`, a submodule of exec-fn at `claude-box/`). A bare "§N" below means **exec-fn's ARCHITECTURE.md**; "S-N" means a section of THIS file. Each heading names its old exec-fn id (`was §7x`) so old references can be repointed. History / incident stories: [ARCHAEOLOGY.md](ARCHAEOLOGY.md). The parent's side (routes, `cc_client.py` transport, the Exec panel UI, status bar, commands, voice input, owner-only tier) is **§7** in exec-fn.
 
-Verified against the code on 2026-10-14. Counts and names are read from the source, not from older docs; where something could not be checked it says so.
+Verified against the code on 2026-10-15. Counts and names are read from the source, not from older docs; where something could not be checked it says so.
 
 ## Map
 
@@ -21,21 +21,14 @@ Verified against the code on 2026-10-14. Counts and names are read from the sour
 | `probe-tools.mjs` | What tools does the model actually get (S-6) |
 | `cc-context.md` | Wai's standing context, half of the system prompt (S-9) |
 | `cc-sidecar.service`, `setup.sh`, `exec-fn-ccprobe.cron` | Install: unit, provisioning, nightly probe cron (S-1) |
-| `*.test.mjs` | `login`, `sandbox-paths`, `uploads` (13 + 4 + 2 `test(` cases) |
+| `*.test.mjs` | `login` (4), `sandbox-paths` (13), `uploads` (2) `test(` cases |
+| `README.md`, `scripts/pre-commit` | One-time login + ops; the lint shim (exec-fn owns the checks) |
 
 ## S-1. Topology and install (was §7a)
 
 Claude Code cannot run in the app container (`python:3.12-slim` — no node, no `claude` binary, no credentials), so it runs on the droplet HOST as its own user and the container reaches it at `172.17.0.1:8129` (`CC_BIND_HOST`/`CC_BIND_PORT`; the container side reads `CC_SIDECAR_URL`). Same idiom as hosaka/emet/printer minus the SSH tunnel. **Never bind 0.0.0.0** — nginx does not proxy this port and that is load-bearing.
 
-```mermaid
-flowchart LR
-  API[exec-fn api: cc_client.py / routes_cc.py] -->|172.17.0.1:8129 x-cc-token| SC[server.mjs<br/>cc-sidecar.service]
-  SC --> SDK[Agent SDK -> claude CLI subprocess]
-  SC --> ARCH[(~cc-agent/.cc-archive)]
-  SC --> PTR[(~cc-agent/.cc-session)]
-  SDK --> MCP1[in-process MCP 'archive']
-  SDK --> MCP2[in-process MCP 'exec' -> /api/exec/tool/*]
-```
+![Sidecar topology and transport](docs/arch/topology.svg)
 
 **Endpoints** (all need the `x-cc-token` header = `CC_SIDECAR_TOKEN`; 401 otherwise):
 
@@ -56,22 +49,25 @@ flowchart LR
 
 **`MAX_CONCURRENT` 1 + `MemoryMax=700M`** is a memory ceiling expressed as a queue depth (~930MB free, each run spawns a CLI subprocess). Limits in `server.mjs`: `MAX_TURNS` 40, `IDLE_TIMEOUT_MS` 10 min, 4 images x 5MB base64, 24MB body. All overridable by `CC_*` env.
 
-**Install**: `sudo bash /exec-fn/claude-box/setup.sh` — idempotent. Creates `cc-agent`, `/srv/cc-sandbox`, copies **every module `server.mjs` imports** (a missing line once shipped a `server.mjs` whose imports did not exist and the unit would not boot) plus `cc-context.md` into `/srv/cc-agent/`, runs `npm install --omit=dev`, writes `/etc/cc-sidecar.env` once, installs the unit and the probe cron, `daemon-reload`s. It does NOT restart the unit: `sudo systemctl restart cc-sidecar`. `/srv/cc-agent` is **root-owned** so the agent cannot rewrite the server that constrains it. The setup script copies from `/exec-fn/claude-box/`, so the submodule must stay at that path.
+**Install**: `sudo bash /exec-fn/claude-box/setup.sh` — idempotent. Creates `cc-agent`, `/srv/cc-sandbox`, copies **every module `server.mjs` imports** (a missing line once shipped a `server.mjs` whose imports did not exist and the unit would not boot) plus `cc-context.md` into `/srv/cc-agent/`, runs `npm install --omit=dev`, writes `/etc/cc-sidecar.env` once, installs the unit and the probe cron, `daemon-reload`s. It does NOT enable or restart the unit: first time, do the one-time login (README) then `sudo systemctl enable --now cc-sidecar`; after changes `sudo systemctl restart cc-sidecar`. `/srv/cc-agent` is **root-owned** so the agent cannot rewrite the server that constrains it. The setup script copies from `/exec-fn/claude-box/`, so the submodule must stay at that path.
 
 ## S-2. Signing back in from the panel (`login.mjs`, was §7a-bis)
 
-The login does die: on 2026-10-09 the CLI's OAuth refresh failed and every Exec turn became `Failed to authenticate: OAuth session expired and could not be refreshed`. The ssh fix was miserable from a phone, and the TUI hard-wraps the 465-char URL, which claude.com then rejects as `Invalid request format`. Now the panel recovers it:
+The login can die (OAuth refresh fails; incident: ARCHAEOLOGY). The panel recovers it, no page JS involved:
 
-1. A turn whose SDK message carries `error: "authentication_failed"` (or that throws something matching `SIGNED_OUT_RE`) makes `handleQuery` call `startLogin()`: spawn `claude auth login --claudeai` (`/usr/bin/claude`; `CC_CLAUDE_BIN` overrides), cut the URL out of its OSC 8 hyperlink.
-2. The URL is appended to the failure reply as a markdown link in an ordinary `text` frame — **no page JS changed**.
-3. While a sign-in waits, a message shaped `code#state` (or a bare 32+ char code) goes to `answerSignIn` instead of the model — before the busy check, taking no query slot. The code is written to the CLI's stdin; the CLI, holding the PKCE verifier, does the exchange and writes `.credentials.json` itself. The code never enters a transcript. The match runs on the prompt with the `<exec-context>` block stripped.
-4. Replies: "Signed back in. Send your last message again." A wrong code gets the CLI's last line plus a fresh link (the CLI exits after one bad exchange); a code from an older link gets "Use this one".
+![Panel sign-in flow](docs/arch/login.svg)
 
-The code cannot come back without a paste: the OAuth client redirects only to `platform.claude.com/oauth/code/callback` or to `localhost` on the clicking machine. The child lives `LOGIN_TTL_MS` (10 min); repeated failures rejoin the same pending sign-in rather than spawning a second CLI in the 700M unit. `startLogin(env)` takes the child's env from the caller (`childEnv()`, token stripped). Tests: `login.test.mjs` (fake CLI), wrapped by exec-fn's `tests/test_cc_login.py`.
+- Trigger: an SDK message with `error: "authentication_failed"`, or a throw matching `SIGNED_OUT_RE`, makes `handleQuery` call `startLogin()` (`claude auth login --claudeai`; `CC_CLAUDE_BIN` overrides `/usr/bin/claude`).
+- While a sign-in waits, a message shaped `code#state` (or a bare 32+ char code) goes to `answerSignIn` instead of the model, before the busy check. The match runs on the prompt with `<exec-context>` stripped. The code goes to the CLI's stdin (it holds the PKCE verifier); it never enters a transcript.
+- A wrong code gets the CLI's last line plus a fresh link (the CLI exits after one bad exchange); a code from an older link gets "Use this one".
+
+The code cannot come back without a paste: the OAuth client redirects only to `platform.claude.com/oauth/code/callback` or to `localhost` on the clicking machine. The child lives `LOGIN_TTL_MS` (10 min); repeated failures rejoin the same pending sign-in rather than a second CLI in the 700M unit. `startLogin(env)` takes the child's env from the caller (`childEnv()`, token stripped). Tests: `login.test.mjs` (fake CLI), wrapped by exec-fn's `tests/test_cc_login.py`.
 
 ## S-3. The sandbox — three mechanisms, NOT equally strong (was §7b)
 
-1. **The filesystem is an ALLOWLIST and is solid**: `TemporaryFileSystem=/:ro` + named `BindReadOnlyPaths`/`BindPaths` in `cc-sidecar.service`. It names `/usr /bin /sbin /lib /lib64 /srv/cc-agent` read-only, a **file-by-file slice of `/etc`** (`ssl`, `ca-certificates`, `ca-certificates.conf`, `passwd`, `group`, `nsswitch.conf`, `hosts`, `localtime`, optional `resolv.conf` and `/run/systemd/resolve`), and read-write only `/srv/cc-sandbox` + `/home/cc-agent`. `ProtectSystem=` is deliberately absent — it conflicts with the tmpfs root and wins, bringing the real root back. `/etc/cron.d`, `/etc/nginx`, `/exec-fn`, `data/` and the docker socket are absent from the namespace.
+![Sandbox layers](docs/arch/sandbox.svg)
+
+1. **The filesystem is an ALLOWLIST and is solid**: `TemporaryFileSystem=/:ro` + named `BindReadOnlyPaths`/`BindPaths` in `cc-sidecar.service`. It names `/usr /bin /sbin /lib /lib64 /srv/cc-agent` read-only, a **file-by-file slice of `/etc`** (`ssl`, `ca-certificates`, `ca-certificates.conf`, `passwd`, `group`, `nsswitch.conf`, `hosts`, `localtime`, optional `resolv.conf` and `/run/systemd/resolve`), and read-write only `/srv/cc-sandbox` + `/home/cc-agent`. `ProtectSystem=` is deliberately absent — it conflicts with the tmpfs root and wins, bringing the real root back. `ProtectHome=tmpfs`, `PrivateTmp`, `PrivateDevices`, `NoNewPrivileges` and the usual kernel-protect flags are also set. `/etc/cron.d`, `/etc/nginx`, `/exec-fn`, `data/` and the docker socket are absent from the namespace.
 2. **MCP connectors are an ALLOWLIST and are solid**: `strictMcpConfig: true` + `mcpServers` naming only the two in-process servers (`archive`, and `exec` once its schemas have loaded) = "only the servers named here". A subscription login attaches the ACCOUNT's connectors (Gmail/Calendar/Drive have been live); `strictMcpConfig` is what drops them. Re-probe after enabling a new one.
 3. **Tools are an ALLOWLIST**, via the SDK's **`tools`** option: `BUILTIN_TOOLS` is passed as `tools`, so anything not named never enters the model's context, including a tool from a future SDK. `disallowedTools: BLOCKED_TOOLS` stays as belt, to keep built-ins out of context. **`canUseTool` is NOT the gate for harness tools** (measured: a deny-everything callback never saw `ToolSearch`/`CronList`, which both executed) — it is a third layer: it denies names outside `ALLOWED_TOOLS` and applies the path gate (S-5). `ALLOWED_TOOLS` is deliberately NOT passed as the SDK's `allowedTools`, which would auto-approve before `canUseTool` and shadow it.
 
@@ -107,15 +103,15 @@ Tests: `sandbox-paths.test.mjs`, 13 cases against real directories and real syml
 
 ## S-6. Tools — what is granted (was §7c, sidecar half)
 
-**24 allowed names, one allowlist, all ours**: the 11 built-ins in `BUILTIN_TOOLS` (`Read`, `Write`, `Edit`, `NotebookEdit`, `Bash`, `BashOutput`, `KillShell`, `Glob`, `Grep`, `WebSearch`, `WebFetch`) + the 3 `mcp__archive__*` (`ARCHIVE_TOOL_NAMES`) + the 10 `mcp__exec__*` (`EXEC_TOOL_NAMES`) = `ALLOWED_TOOLS`. Plus an explicit `systemPrompt` replacing Claude Code's coding-CLI preset, `cwd` on the sandbox. **Count from `server.mjs`, never from a doc** — this has been wrong in docs three times (5, 12, 14).
+**24 allowed names, one allowlist, all ours**: the 11 built-ins in `BUILTIN_TOOLS` (`Read`, `Write`, `Edit`, `NotebookEdit`, `Bash`, `BashOutput`, `KillShell`, `Glob`, `Grep`, `WebSearch`, `WebFetch`) + the 3 `mcp__archive__*` (`ARCHIVE_TOOL_NAMES`) + the 10 `mcp__exec__*` (`EXEC_TOOL_NAMES`) = `ALLOWED_TOOLS`. Plus an explicit `systemPrompt` replacing Claude Code's coding-CLI preset, `cwd` on the sandbox. **Count from `server.mjs`, never from a doc.**
 
-A **cold probe prints 22**: `BashOutput`/`KillShell` surface only once a background shell exists (`CONDITIONAL` in `probe-tools.mjs`), so their absence is not a finding. The direction that matters is `UNEXPECTED` (exit 1). Measured 2026-09-27: 22 tools, no `UNEXPECTED`; **not re-measured in this docs pass** (running it spends an API call and needs the token).
+A **cold probe prints 22**: `BashOutput`/`KillShell` surface only once a background shell exists (`CONDITIONAL` in `probe-tools.mjs`), so their absence is not a finding. The direction that matters is `UNEXPECTED` (exit 1). Last measured 2026-09-27: 22 tools, no `UNEXPECTED`; not re-measured since (it spends an API call and needs the token).
 
 **Run the probe after any `@anthropic-ai/claude-agent-sdk` bump**; it is automatic nightly:
 
 - `scripts/cc-probe-daily.sh` (exec-fn repo, root cron `/etc/cron.d/exec-fn-ccprobe` installed by `setup.sh` from `exec-fn-ccprobe.cron`, 5:20 ET) compares the INSTALLED SDK version (`/srv/cc-agent/node_modules/.../package.json`) against the stamp `/srv/cc-agent/.sdk-probed`. **The trigger is the installed version, not a commit**: `package.json` pins `^0.3.265`, so any `npm install` can pull a new minor with no repo change. Unchanged → one file read, no API call. Exit 1 (a tool outside `ALLOWED_TOOLS`) shouts into `data/cron/…__ccprobe.log` (visible on `/debug`) and **does not stamp**, so it re-reports nightly until fixed; exit 2 (auth/network/SDK shape) is logged as noise. By hand: `sudo /exec-fn/scripts/cc-probe-daily.sh --force`.
 - The script sources `/etc/cc-sidecar.env` as root and passes the token with `sudo --preserve-env=CC_SIDECAR_TOKEN,EXEC_API_URL`, never on the command line; without it the exec server is absent and the probe measures a smaller sandbox than the one serving traffic.
-- `probe-tools.mjs` imports `sandboxOptions()`/`probeOptions()` and `ALLOWED_TOOLS` from `server.mjs` rather than rebuilding them, so it measures the policy that serves traffic. That is why `server.listen` is guarded by `RUN_AS_MAIN`: an import that seized the port would take the live sidecar down to answer a question about it. The probe runs in `TITLE_SANDBOX` so it never files a session in Wai's picker. (Its header comment still says "TOOL COUNT: 0" — stale text in the code, not fixed here.)
+- `probe-tools.mjs` imports `sandboxOptions()`/`probeOptions()` and `ALLOWED_TOOLS` from `server.mjs` rather than rebuilding them, so it measures the policy that serves traffic. That is why `server.listen` is guarded by `RUN_AS_MAIN`: an import that seized the port would take the live sidecar down to answer a question about it. The probe runs in `TITLE_SANDBOX` so it never files a session in Wai's picker.
 
 **Deliberately still OUT** (comment in `server.mjs`; each a judgement): `Task` (subagents ~300MB each vs the 700M cap), `AskUserQuestion`/`EnterPlanMode`/`ExitPlanMode` (the page cannot render them), `Skill` (reads a dir not in the namespace), `Cron*`/`Workflow`/`RemoteTrigger`/`PushNotification`/`SendMessage`/`ScheduleWakeup`/`Monitor`/`ListAgents`/`*Worktree`/`DesignSync`/`ReportFindings`/`ToolSearch` (assume a terminal on the other end). Listed in `BLOCKED_TOOLS` as belt.
 
@@ -134,7 +130,6 @@ The agent gets Exec's ten card tools as `mcp__exec__*` from a second in-process 
 - **Auth is the sidecar token only** (`x-cc-token` = `CC_SIDECAR_TOKEN`), deliberately not the admin `API_KEY`: the agent has Bash, so anything the sidecar holds must be assumed readable by it. The container-side routes refuse admin/guest creds (parent §7c-bis).
 - **The token is stripped from the CLI's environment** (`childEnv()` → the SDK `env` option; also used for the login child). It only needs to live in the node process. Verified live 2026-09-27: `env | grep -c CC_SIDECAR_TOKEN` in the agent's Bash returned 0 while `/proc/<pid>/environ` of the unit held it.
 - **Reachability**: the unit has no `PrivateNetwork`, so `127.0.0.1:8080` (the container's published port) is reachable (`EXEC_API_URL` overrides).
-- End-to-end check (2026-09-27): a real SDK turn called `mcp__exec__update_card` on a non-existent id and got `{"error":"Card not found: card-doesnotexist"}` back; nothing written.
 
 ## S-8. The archive is three tools, not a filesystem (`archive-tools.mjs`, was §7d)
 
@@ -172,12 +167,14 @@ Testing a prompt change appends to the ONE live conversation: park the pointer f
 
 ## S-11. A run outlives its caller; interrupt is its own request (was §7k, sidecar half, 2026-10-14)
 
-Wai: "don't stop generating responses when I minimize or close the exec chat." Backgrounding Safari, closing the tab, or the container reloading each dropped the stream, and the old `res.on("close")` abort killed the run with it. Now:
+Backgrounding the phone, closing the tab or a container reload drops the stream; the run must survive it (history: ARCHAEOLOGY).
+
+![Run and interrupt lifecycle](docs/arch/lifecycle.svg)
 
 - `handleQuery` sets `running = controller`; a run ends by **finishing, the 10-minute idle timeout (`touch()` per SDK message), or `POST /interrupt`** (aborts `running`; the slot frees when the handler unwinds, so the caller polls `/health`). **There is no `close` listener.** Frames after a hangup are dropped by `sse()` (`res.destroyed`/`writableEnded` checked); the SDK transcript still gets every word, and the page replays from it (parent §7k).
 - An orphan holds the single slot until it finishes; a send meanwhile gets HTTP 429 and `cc_client` waits (parent).
-- History: the old hangup abort was first wired to `req`, where it never fired (a fully-read `IncomingMessage` emits no further `close`) — see ARCHAEOLOGY. Never reintroduce a hangup abort without reading that and the 2026-10-14 entry.
-- Not verified end to end against a live subscription run (needs a message in Wai's real thread); the sidecar half is small (no listener, guarded `sse`, `/interrupt`), and the route was probed live (`{ok, stopped:false}`).
+- Never reintroduce a hangup abort without reading the ARCHAEOLOGY entries (the listener once sat on `req`, where it never fired).
+- Not verified end to end against a live subscription run; the route was probed live (`{ok, stopped:false}`).
 
 ## S-12. Rolling titles — two calls, with a deterministic floor (`title-gen.mjs`, was §7i, sidecar half)
 
