@@ -33,9 +33,10 @@ so the honest boundary is the mount namespace plus a path gate, not "no tools"
 2. **The tool allowlist** — the SDK `tools` option (`BUILTIN_TOOLS` in
    `server.mjs`) keeps anything unnamed out of the model's context.
 3. **`canUseTool`** — denies names outside `ALLOWED_TOOLS` and confines the
-   path-taking tools (`Read/Write/Edit/NotebookEdit/Glob/Grep`) to the sandbox
-   dir (`sandbox-paths.mjs`, resolved-path check). It does NOT see harness tools
-   and does not cover `Bash`.
+   path argument of `Read/Write/Edit/NotebookEdit/Glob/Grep` to the sandbox
+   dir (`sandbox-paths.mjs`, resolved-path check; `Glob`'s `pattern` and
+   `Grep`'s `glob` are not checked). It does NOT see harness tools and does
+   not cover `Bash`.
 4. **`settingSources: []`** — no settings file is read, so a `settings.json` the
    agent wrote itself cannot come back as policy.
 
@@ -51,7 +52,7 @@ sudo bash /exec-fn/claude-box/setup.sh
 Idempotent. Creates `cc-agent`, `/srv/cc-sandbox`, installs the SDK into
 `/srv/cc-agent`, generates `/etc/cc-sidecar.env` (shared secret — the bridge
 port is host-only, but *any* container on the box can reach it), and installs
-the unit.
+the unit and the nightly probe cron.
 
 ## One-time login
 
@@ -94,8 +95,7 @@ takes no session id.
 
 `MAX_CONCURRENT` is 1. That is a memory ceiling expressed as a queue depth: the
 droplet has ~930MB free and each run spawns a CLI subprocess, so the unit also
-carries `MemoryMax=700M`. A second concurrent request gets a 429, which
-`routes_cc.py` surfaces as "busy" rather than an error.
+carries `MemoryMax=700M`. A second concurrent request gets a 429; exec-fn's `cc_client.py` polls and waits up to `CC_BUSY_WAIT` (300 s) for the slot, and only a slot held past that surfaces as a "busy" frame.
 
 Subscription rate limits are **per account** — wrapper traffic shares the same
 budget as interactive `claude` sessions on this box.
@@ -130,7 +130,7 @@ instructions the way it could a file in the sandbox.
 
 It deliberately carries no repo or project detail: the sandbox is not a
 checkout, so that would be tokens on every turn buying nothing. The personal
-detail it does carry is safe only while `/cc` stays owner-only — widening that
+detail it does carry is safe only while the `/api/cc/*` routes stay owner-only — widening that
 tier means pulling this file first. Docs: ARCHITECTURE.md, ARCHAEOLOGY.md, CLAUDE.md here.
 
 Testing a prompt change costs a turn in the ONE live conversation, so park the

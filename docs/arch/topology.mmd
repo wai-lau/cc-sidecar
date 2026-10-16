@@ -7,4 +7,6 @@ flowchart LR
     sdk --> mcpa["in-process MCP archive"]
     sdk --> mcpe["in-process MCP exec"]
     mcpe -->|"GET /api/exec/tools<br/>POST /api/exec/tool/name<br/>127.0.0.1:8080, x-cc-token"| api2["exec-fn container<br/>routes_exec.py"]
-    sdk -->|OAuth, WebSearch, WebFetch| anth["api.anthropic.com / web"]
+    sc -->|"GET /api/exec/prompt<br/>127.0.0.1:8080, x-cc-token"| api2
+    sdk -->|"OAuth, WebSearch, WebFetch"| anth["api.anthropic.com / web"]
+    sc -->|"GET /api/oauth/usage<br/>(usage.mjs)"| anth

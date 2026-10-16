@@ -8,4 +8,5 @@ flowchart TD
     ans --> stdin["code written to CLI stdin"]
     stdin --> cli["CLI does PKCE exchange,<br/>writes .credentials.json"]
     cli --> ok["Signed back in. Send your last message again."]
-    stdin -.wrong code.-> fresh["CLI exits: reply with last line + fresh link"]
+    stdin -. "wrong code" .-> fresh["CLI exits: reply with last line + fresh link"]
+    ans -. "code from an older link" .-> stale["reply: Use this one (current link)"]

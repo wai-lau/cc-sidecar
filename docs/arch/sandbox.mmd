@@ -3,9 +3,9 @@ flowchart TD
     l1 -->|"not named: never in context"| no1["absent"]
     l1 --> l2{"2. strictMcpConfig<br/>only archive + exec servers"}
     l2 -->|"account connectors dropped"| no2["absent"]
-    l2 --> l3{"3. canUseTool<br/>name in ALLOWED_TOOLS?"}
+    l2 --> l3{"3. canUseTool<br/>name in ALLOWED_TOOLS?<br/>(not consulted for harness tools)"}
     l3 -->|no| deny["denied"]
-    l3 --> l4{"4. path gate<br/>realpath under /srv/cc-sandbox?<br/>file tools only"}
+    l3 --> l4{"4. path gate<br/>realpath under /srv/cc-sandbox?<br/>path arg of file tools only"}
     l4 -->|no| deny
-    l4 --> l5["5. mount namespace<br/>TemporaryFileSystem=/:ro + named binds"]
-    l5 --> bash["Bash: gated only by layer 5<br/>can reach /home/cc-agent"]
+    l4 --> l5["5. mount namespace<br/>TemporaryFileSystem=/:ro + named binds<br/>network not confined"]
+    l5 --> bash["Bash: no path gate, only layer 5 bounds files<br/>can reach /home/cc-agent"]

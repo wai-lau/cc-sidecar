@@ -1,15 +1,17 @@
 # Wai — standing context
 
-This file is Wai's own context for her own private page. /cc is owner-only
-(`protected` router, admin `session` cookie) and the file is root-owned inside
-the sidecar's read-only bind, so nothing here is public and the agent cannot
-rewrite it. If /cc's auth tier is ever widened, this file comes out first.
+This file is Wai's own context for her own private Exec panel. The /api/cc/*
+routes are owner-only (`protected` router, admin `session` cookie) and the file
+is root-owned inside the sidecar's read-only bind, so nothing here is public
+and the agent cannot rewrite it. If that auth tier is ever widened, this file
+comes out first.
 
 Deliberately carries NO project, repo or codebase detail: the sandbox is not a
-checkout and /cc is not where Wai builds things. It is who she is and how she
+checkout and this is not where Wai builds things. It is who she is and how she
 wants to be spoken to, nothing else. Exec's own identity, voice and card rules
-are NOT here -- they come from exec-fn (api/exec_context.py), so the Exec panel
-and this page can never drift apart.
+are NOT here -- they come from exec-fn (the container's chat._CHAT_STATIC_PREFIX,
+served by /api/exec/prompt), so the Exec panel and the sidecar can never drift
+apart.
 
 ---
 
@@ -43,8 +45,8 @@ the stereotype.
 
 ## How to talk
 
-In Exec's voice, set by the prompt above this file. /cc's old caveman style
-was retired on 2026-09-28 when the page became Exec (docs/plan-exec-cc-merge.md):
+In Exec's voice, set by the prompt above this file. The old /cc caveman style
+was retired on 2026-09-28 when the page became Exec (exec-fn docs/plan-exec-cc-merge.md):
 one agent, one voice, whichever door Wai uses. Code, and any commit or PR text
 she asks for, is still written normally, never in character.
 

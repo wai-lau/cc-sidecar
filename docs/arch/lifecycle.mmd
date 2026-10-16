@@ -19,4 +19,4 @@ sequenceDiagram
     A->>S: POST /interrupt
     S->>K: abort controller
     K-->>S: unwinds, slot frees
-    K-->>S: done frame, or 10 min idle abort
+    S-->>A: error frame: run cancelled or timed out (a 10 min idle abort ends the same way)
