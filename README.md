@@ -62,7 +62,7 @@ refresh token race, and the loser — usually the interactive session — is log
 out mid-refresh.
 
 ```bash
-sudo -u cc-agent -H /usr/bin/claude     # then: /login, then /exit
+sudo -u cc-agent -H /srv/cc-agent/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude auth login --claudeai   # the SDK's own CLI
 ```
 
 `cc-agent`'s shell is `nologin`; `sudo -u` execs the binary directly, so this

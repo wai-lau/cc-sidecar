@@ -45,7 +45,7 @@ Claude Code cannot run in the app container (`python:3.12-slim` — no node, no 
 | POST | `/title-gen` | The written-and-judged rolling title (S-12) |
 | GET | `/limits` | Subscription windows (S-14) |
 
-**Auth is `cc-agent`'s OWN subscription login** (`sudo -u cc-agent -H /usr/bin/claude`, then `/login`) — NOT a copy of wai-root's `~/.claude/.credentials.json`. Two processes sharing one OAuth refresh token race, and the loser (usually the interactive session) is logged out mid-refresh. A logged-out sidecar answers a clean per-request `Not logged in · Please run /login` text frame, so the page degrades rather than 500s.
+**Auth is `cc-agent`'s OWN subscription login** (`sudo -u cc-agent -H /srv/cc-agent/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude auth login --claudeai` — the SDK's bundled CLI; the npm-global `/usr/bin/claude` was removed 2026-11-18) — NOT a copy of wai-root's `~/.claude/.credentials.json`. Two processes sharing one OAuth refresh token race, and the loser (usually the interactive session) is logged out mid-refresh. A logged-out sidecar answers a clean per-request `Not logged in · Please run /login` text frame, so the page degrades rather than 500s.
 
 **`MAX_CONCURRENT` 1 + `MemoryMax=700M`** is a memory ceiling expressed as a queue depth (~930MB free, each run spawns a CLI subprocess). Limits in `server.mjs`: `MAX_TURNS` 40, `IDLE_TIMEOUT_MS` 10 min, 4 images x 5MB base64, 24MB body. All overridable by `CC_*` env.
 
@@ -57,7 +57,7 @@ The login can die (OAuth refresh fails; incident: ARCHAEOLOGY). The panel recove
 
 ![Panel sign-in flow](docs/arch/login.svg)
 
-- Trigger: an SDK message with `error: "authentication_failed"`, or a throw matching `SIGNED_OUT_RE`, makes `handleQuery` call `startLogin()` (`claude auth login --claudeai`; `CC_CLAUDE_BIN` overrides `/usr/bin/claude`).
+- Trigger: an SDK message with `error: "authentication_failed"`, or a throw matching `SIGNED_OUT_RE`, makes `handleQuery` call `startLogin()` (`claude auth login --claudeai`; run with the SDK's bundled CLI, `/srv/cc-agent/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude`; `CC_CLAUDE_BIN` overrides).
 - While a sign-in waits, a message shaped `code#state` (or a bare 32+ char code) goes to `answerSignIn` instead of the model, before the busy check. The match runs on the prompt with `<exec-context>` stripped. The code goes to the CLI's stdin (it holds the PKCE verifier); it never enters a transcript.
 - A wrong code gets the CLI's last line plus a fresh link (the CLI exits after one bad exchange); a code from an older link gets "Use this one".
 

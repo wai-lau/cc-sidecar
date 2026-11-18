@@ -23,8 +23,15 @@
  */
 
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const BIN = process.env.CC_CLAUDE_BIN || "/usr/bin/claude";
+// The CLI the Agent SDK ships beside itself: the same binary (and credential
+// format) every run uses, upgraded with the SDK. The npm-global
+// /usr/bin/claude it replaced was a second install that made the owner's
+// native CLI warn "Multiple installations found" (removed 2026-11-18).
+const SDK_BIN = fileURLToPath(new URL(
+  "./node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude", import.meta.url));
+const BIN = process.env.CC_CLAUDE_BIN || SDK_BIN;
 // The CLI holds the PKCE verifier only while it lives, so the link is good for
 // exactly as long as the child is kept. Ten minutes covers a phone unlock and a
 // slow approve; a child kept past that is a resident CLI in a 700M unit for

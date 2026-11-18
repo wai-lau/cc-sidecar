@@ -291,7 +291,7 @@ let titleBusy = false;
  *
  * Checked per call, never cached: the file appears the moment a sign-in
  * finishes (from the panel, login.mjs, or by hand: `sudo -u cc-agent -H
- * /usr/bin/claude` + /login), and a cached false
+ * <the SDK's bundled claude> auth login`), and a cached false
  * would keep the page saying "login needed" until someone restarted the unit.
  * Advisory only -- a run is never blocked on it. */
 function hasLogin() {
