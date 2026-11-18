@@ -21,7 +21,7 @@ Verified against the code on 2026-10-15. Counts and names are read from the sour
 | `probe-tools.mjs` | What tools does the model actually get (S-6) |
 | `cc-context.md` | Wai's standing context, half of the system prompt (S-9) |
 | `cc-sidecar.service`, `setup.sh`, `exec-fn-ccprobe.cron` | Install: unit, provisioning, nightly probe cron (S-1) |
-| `*.test.mjs` | `login` (4), `sandbox-paths` (13), `uploads` (2) `test(` cases |
+| `*.test.mjs` | `login` (4), `sandbox-paths` (13), `uploads` (2), `usage` (4) `test(` cases |
 | `README.md`, `scripts/pre-commit` | One-time login + ops; the lint shim (exec-fn owns the checks) |
 
 ## S-1. Topology and install (was §7a)
@@ -194,7 +194,7 @@ It is **TWO calls**: haiku writes, then an independent haiku call judges whether
 
 ## S-14. Usage / limits (`usage.mjs`, was §7h, sidecar half)
 
-The status bar's 5h/7d numbers. **They are not in the SDK**: `rate_limit_event` is declared in its `.d.ts` but the string appears ZERO times in the shipped runtime (0.3.265), and nothing the CLI writes to disk holds the numbers. The CLI reads `anthropic-ratelimit-unified-*` headers and calls `GET /api/oauth/usage`; that is reachable outside a request, so `usage()` asks it with cc-agent's OAuth access token and returns `{ok, five_hour, seven_day, seven_day_opus}` as `{pct, resetsAt (epoch s)}`. **The token never leaves the sidecar** and is **never refreshed here** (two processes on one refresh token race; an expired token degrades to `{ok:false}`). Cached 60 s. `normalize()` still forwards a `limits` frame if a future SDK emits `rate_limit_event` — a free upgrade path, today dead.
+The status bar's 5h/7d numbers. **They are not in the SDK**: `rate_limit_event` is declared in its `.d.ts` but the string appears ZERO times in the shipped runtime (0.3.265), and nothing the CLI writes to disk holds the numbers. The CLI reads `anthropic-ratelimit-unified-*` headers and calls `GET /api/oauth/usage`; that is reachable outside a request, so `usage()` asks it with cc-agent's OAuth access token and returns `{ok, five_hour, seven_day, seven_day_opus, credits}`, windows as `{pct, resetsAt (epoch s)}`. `credits` (2026-11-18) is the terminal status line's wording via `creditsText` (prepaid balance — a second call, `organizations/<org>/prepaid/credits`, org from `~cc-agent/.claude.json`, made only while `spend.enabled` — else monthly limit less used, else `N.NNused`; null while credits are off). **The token never leaves the sidecar** and is **never refreshed here** (two processes on one refresh token race; an expired token degrades to `{ok:false}`). Cached 60 s; **a refusal is remembered 60 s too** (the panel now asks every minute, and re-asking straight after a 429 only extends it), returning the last good numbers meanwhile. `normalize()` still forwards a `limits` frame if a future SDK emits `rate_limit_event` — a free upgrade path, today dead.
 
 `done` frames carry `ctxTokens` = input + cache_read + cache_creation of the last `result`, `outTokens`, `turns`, `ms`, `costUsd` (an equivalent-cost estimate on subscription runs, not a charge). **A multi-call turn's `ctxTokens` is the SUM across its API calls**, so ctx% can read 100% after a tool-using turn (measured 2026-09-29: 133K real on a 200K window); the parent shows what the sidecar reports.
 
